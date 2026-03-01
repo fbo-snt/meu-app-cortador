@@ -1,9 +1,9 @@
 import streamlit as st
 import yt_dlp
-from yt_dlp.utils import download_range_func
 import os
 import re
 import tempfile
+import subprocess
 
 st.set_page_config(page_title="Cortador Pro ✂️", page_icon="⚡", layout="centered")
 
@@ -52,18 +52,29 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
         if not cortes_validos:
             st.warning("⚠️ Preencha pelo menos o Início e o Fim de um corte!")
         else:
-            with st.spinner("Buscando informações do vídeo..."):
+            with st.spinner("Preparando o vídeo base (Isso evita bloqueios do YouTube)..."):
                 try:
-                    ydl_opts_info = {'quiet': True}
-                    with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-                        info = ydl.extract_info(url, download=False)
-                        titulo_video = info.get('title', 'Video_Sem_Titulo')
-                    
-                    st.success(f"Vídeo encontrado: **{titulo_video}**")
-                    
                     with tempfile.TemporaryDirectory() as tmpdirname:
+                        # 1. Baixa o vídeo inteiro primeiro (Super rápido na nuvem)
+                        ydl_opts_base = {
+                            'format': 'best',
+                            'outtmpl': os.path.join(tmpdirname, 'video_completo.%(ext)s'),
+                            'quiet': True,
+                            'noplaylist': True,
+                            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                        }
+                        
+                        with yt_dlp.YoutubeDL(ydl_opts_base) as ydl:
+                            info = ydl.extract_info(url, download=True)
+                            ext = info.get('ext', 'mp4')
+                            titulo_video = info.get('title', 'Video_Sem_Titulo')
+                            video_completo_path = os.path.join(tmpdirname, f'video_completo.{ext}')
+                        
+                        st.success(f"✅ Vídeo base encontrado! Cortando os trechos...")
+                        
+                        # 2. Corta offline usando o FFmpeg
                         for corte in cortes_validos:
-                            st.write(f"⏳ Processando **Corte {corte['index']}** ({corte['inicio']} até {corte['fim']})...")
+                            st.write(f"⏳ Finalizando **Corte {corte['index']}**...")
                             
                             inicio_sec = tempo_para_segundos(corte['inicio'])
                             fim_sec = tempo_para_segundos(corte['fim'])
@@ -71,21 +82,16 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
                             nome_base = limpar_nome_arquivo(corte['titulo']) if corte['titulo'].strip() else f"Trecho_{corte['index']}"
                             caminho_video = os.path.join(tmpdirname, f"{nome_base}.mp4")
                             
-                            # === DISFARCE ANTI-BLOQUEIO DO YOUTUBE ATIVADO ===
-                            ydl_opts = {
-                                'format': 'best',
-                                'outtmpl': caminho_video,
-                                'download_ranges': download_range_func(None, [(inicio_sec, fim_sec)]),
-                                'force_keyframes_at_cuts': True,
-                                'quiet': True,
-                                'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
-                                'external_downloader_args': {'ffmpeg': ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5']}
-                            }
+                            # Comando mágico do FFmpeg para cortar rápido e sem travar
+                            comando = [
+                                'ffmpeg', '-y', '-i', video_completo_path,
+                                '-ss', str(inicio_sec), '-to', str(fim_sec),
+                                '-c:v', 'copy', '-c:a', 'copy', caminho_video
+                            ]
                             
-                            try:
-                                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                                    ydl.download([url])
-                                
+                            resultado = subprocess.run(comando, capture_output=True, text=True)
+                            
+                            if resultado.returncode == 0 and os.path.exists(caminho_video):
                                 st.success(f"✅ Corte {corte['index']} concluído!")
                                 
                                 with open(caminho_video, "rb") as file:
@@ -105,11 +111,9 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
                                         mime="text/plain",
                                         key=f"dl_txt_{corte['index']}"
                                     )
-                                    
                                 st.divider()
-                                
-                            except Exception as e:
-                                st.error(f"❌ Erro no Corte {corte['index']}: {e}")
+                            else:
+                                st.error(f"❌ Falha ao cortar o trecho {corte['index']}.")
                                 
                 except Exception as e:
-                    st.error(f"❌ Erro ao acessar o link: {e}")
+                    st.error(f"❌ Erro crítico: {e}")
