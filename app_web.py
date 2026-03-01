@@ -52,16 +52,18 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
         if not cortes_validos:
             st.warning("⚠️ Preencha pelo menos o Início e o Fim de um corte!")
         else:
-            with st.spinner("Preparando o vídeo base (Isso evita bloqueios do YouTube)..."):
+            with st.spinner("Preparando o vídeo base (Disfarce de Celular Ativado)..."):
                 try:
                     with tempfile.TemporaryDirectory() as tmpdirname:
-                        # 1. Baixa o vídeo inteiro primeiro (Super rápido na nuvem)
+                        
+                        # === DISFARCE SUPREMO PARA BURLAR O ERRO 403 ===
                         ydl_opts_base = {
                             'format': 'best',
                             'outtmpl': os.path.join(tmpdirname, 'video_completo.%(ext)s'),
                             'quiet': True,
                             'noplaylist': True,
-                            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                            'extractor_args': {'youtube': ['player_client=android']}, # Finge ser o App do Android!
+                            'http_headers': {'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36'}
                         }
                         
                         with yt_dlp.YoutubeDL(ydl_opts_base) as ydl:
@@ -70,9 +72,8 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
                             titulo_video = info.get('title', 'Video_Sem_Titulo')
                             video_completo_path = os.path.join(tmpdirname, f'video_completo.{ext}')
                         
-                        st.success(f"✅ Vídeo base encontrado! Cortando os trechos...")
+                        st.success(f"✅ Vídeo base baixado! Cortando os trechos...")
                         
-                        # 2. Corta offline usando o FFmpeg
                         for corte in cortes_validos:
                             st.write(f"⏳ Finalizando **Corte {corte['index']}**...")
                             
@@ -82,7 +83,6 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
                             nome_base = limpar_nome_arquivo(corte['titulo']) if corte['titulo'].strip() else f"Trecho_{corte['index']}"
                             caminho_video = os.path.join(tmpdirname, f"{nome_base}.mp4")
                             
-                            # Comando mágico do FFmpeg para cortar rápido e sem travar
                             comando = [
                                 'ffmpeg', '-y', '-i', video_completo_path,
                                 '-ss', str(inicio_sec), '-to', str(fim_sec),
