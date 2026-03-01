@@ -1,115 +1,187 @@
-import streamlit as st
+import customtkinter as ctk
 import yt_dlp
-from yt_dlp.utils import download_range_func
+from yt_dlp.utils import download_range_func # <-- NOVO IMPORT MÁGICO
+import threading
 import os
 import re
-import tempfile
 
-st.set_page_config(page_title="Cortador Pro ✂️", page_icon="⚡", layout="centered")
+# Configuração visual geral
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
 
-def limpar_nome_arquivo(nome):
-    return re.sub(r'[\\/*?:"<>|]', "", nome)
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("Cortador de Vídeos Pro ✂️")
+        self.geometry("1150x800")
+        self.configure(fg_color="#1E1E2E") 
 
-def tempo_para_segundos(tempo_str):
-    try:
-        partes = tempo_str.split(':')
-        segundos = 0
-        for parte in partes:
-            segundos = segundos * 60 + float(parte)
-        return segundos
-    except Exception:
-        return 0
+        # Título principal
+        self.lbl_titulo = ctk.CTkLabel(self, text="⚡ Baixador e Organizador de Trechos ⚡", font=("Arial", 28, "bold"), text_color="#00E676")
+        self.lbl_titulo.pack(pady=(20, 10))
 
-st.title("⚡ Baixador de Trechos Pro")
-st.markdown("Cole o link, defina os tempos e baixe direto no seu celular/PC!")
-
-url = st.text_input("Link do YouTube:", placeholder="https://www.youtube.com/...")
-
-st.markdown("### ✂️ Configure seus Cortes")
-
-cortes_config = []
-
-for i in range(1, 11):
-    with st.expander(f"📌 Corte {i}", expanded=(i == 1)):
-        col1, col2 = st.columns(2)
-        inicio = col1.text_input(f"Início (ex: 00:15)", key=f"inicio_{i}")
-        fim = col2.text_input(f"Fim (ex: 01:30)", key=f"fim_{i}")
+        # Campo do Link
+        self.frame_link = ctk.CTkFrame(self, fg_color="#282A36", corner_radius=15)
+        self.frame_link.pack(pady=10, padx=20, fill="x")
         
-        titulo = st.text_input(f"Título do Arquivo", placeholder=f"Trecho_{i}", key=f"tit_{i}")
-        descricao = st.text_area(f"Legenda / Hashtags", height=68, key=f"desc_{i}")
+        self.url_label = ctk.CTkLabel(self.frame_link, text="Link do YouTube:", font=("Arial", 14, "bold"), text_color="#8BE9FD")
+        self.url_label.pack(side="left", padx=(20, 10), pady=20)
         
-        cortes_config.append({
-            "index": i, "inicio": inicio, "fim": fim, 
-            "titulo": titulo, "descricao": descricao
-        })
+        self.url_entry = ctk.CTkEntry(self.frame_link, width=450, placeholder_text="Cole o link aqui...", border_color="#6272A4")
+        self.url_entry.pack(side="left", padx=10, pady=20)
 
-if st.button("🚀 Processar Downloads", type="primary", use_container_width=True):
-    if not url:
-        st.error("⚠️ Por favor, cole um link do YouTube primeiro!")
-    else:
-        cortes_validos = [c for c in cortes_config if c["inicio"] and c["fim"]]
+        # Frame rolável para as 10 opções
+        self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="#282A36", corner_radius=15, label_text="Configure seus Cortes", label_font=("Arial", 16, "bold"), label_text_color="#FF79C6")
+        self.scroll_frame.pack(pady=10, padx=20, fill="both", expand=True)
+
+        self.linhas = []
         
-        if not cortes_validos:
-            st.warning("⚠️ Preencha pelo menos o Início e o Fim de um corte!")
+        # Cabeçalhos
+        ctk.CTkLabel(self.scroll_frame, text="Início", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=5, pady=5)
+        ctk.CTkLabel(self.scroll_frame, text="Fim", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=5, pady=5)
+        ctk.CTkLabel(self.scroll_frame, text="Título do Corte", font=("Arial", 12, "bold")).grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkLabel(self.scroll_frame, text="Descrição / Legenda", font=("Arial", 12, "bold")).grid(row=0, column=3, padx=5, pady=5)
+        ctk.CTkLabel(self.scroll_frame, text="Progresso", font=("Arial", 12, "bold")).grid(row=0, column=4, padx=5, pady=5)
+        ctk.CTkLabel(self.scroll_frame, text="Status", font=("Arial", 12, "bold")).grid(row=0, column=5, padx=5, pady=5)
+
+        # Gerando as 10 linhas
+        for i in range(1, 11):
+            ent_inicio = ctk.CTkEntry(self.scroll_frame, width=70, placeholder_text="00:00", justify="center")
+            ent_inicio.grid(row=i, column=0, padx=5, pady=10)
+            
+            ent_fim = ctk.CTkEntry(self.scroll_frame, width=70, placeholder_text="00:00", justify="center")
+            ent_fim.grid(row=i, column=1, padx=5, pady=10)
+            
+            ent_titulo = ctk.CTkEntry(self.scroll_frame, width=180, placeholder_text=f"Corte {i}")
+            ent_titulo.grid(row=i, column=2, padx=5, pady=10)
+            
+            ent_desc = ctk.CTkEntry(self.scroll_frame, width=250, placeholder_text="Hashtags ou legenda...")
+            ent_desc.grid(row=i, column=3, padx=5, pady=10)
+            
+            progresso = ctk.CTkProgressBar(self.scroll_frame, width=120, progress_color="#F1FA8C", mode="indeterminate")
+            progresso.grid(row=i, column=4, padx=10, pady=10)
+            progresso.set(0) # Inicia zerada
+            
+            lbl_status = ctk.CTkLabel(self.scroll_frame, text="Aguardando...", text_color="#6272A4", width=100)
+            lbl_status.grid(row=i, column=5, padx=5, pady=10)
+            
+            self.linhas.append({
+                "inicio": ent_inicio, 
+                "fim": ent_fim, 
+                "titulo": ent_titulo,
+                "descricao": ent_desc,
+                "progresso": progresso, 
+                "status": lbl_status
+            })
+
+        # Botão e Status Geral
+        self.btn_download = ctk.CTkButton(self, text="🚀 Iniciar Downloads", font=("Arial", 16, "bold"), height=40, command=self.preparar_download, fg_color="#50FA7B", text_color="#282A36", hover_color="#38E563")
+        self.btn_download.pack(pady=(10, 5))
+
+        self.status_geral = ctk.CTkLabel(self, text="", font=("Arial", 14))
+        self.status_geral.pack(pady=(0, 20))
+
+    def limpar_nome_arquivo(self, nome):
+        return re.sub(r'[\\/*?:"<>|]', "", nome)
+
+    # NOVO: Função para converter "01:30" em 90 segundos
+    def tempo_para_segundos(self, tempo_str):
+        try:
+            partes = tempo_str.split(':')
+            segundos = 0
+            for parte in partes:
+                segundos = segundos * 60 + float(parte)
+            return segundos
+        except Exception:
+            return 0
+
+    def preparar_download(self):
+        url = self.url_entry.get()
+        if not url:
+            self.status_geral.configure(text="Por favor, insira um link primeiro!", text_color="#FF5555")
+            return
+
+        self.btn_download.configure(state="disabled", text="⏳ Processando...")
+        self.status_geral.configure(text="Buscando informações do vídeo...", text_color="#F1FA8C")
+        
+        threading.Thread(target=self.iniciar_downloads_em_lote, args=(url,)).start()
+
+    def iniciar_downloads_em_lote(self, url):
+        try:
+            ydl_opts_info = {'quiet': True}
+            with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
+                info = ydl.extract_info(url, download=False)
+                titulo_video = info.get('title', 'Video_Sem_Titulo')
+            
+            nome_pasta = self.limpar_nome_arquivo(titulo_video)
+            
+            if not os.path.exists(nome_pasta):
+                os.makedirs(nome_pasta)
+            
+            self.status_geral.configure(text=f"Pasta '{nome_pasta}' criada. Baixando...", text_color="#8BE9FD")
+
+            for i, linha in enumerate(self.linhas, start=1):
+                inicio = linha["inicio"].get()
+                fim = linha["fim"].get()
+                
+                if inicio and fim:
+                    threading.Thread(target=self.baixar_trecho, args=(url, inicio, fim, i, nome_pasta, linha)).start()
+            
+            self.btn_download.configure(state="normal", text="🚀 Iniciar Downloads")
+
+        except Exception as e:
+            self.status_geral.configure(text=f"Erro ao ler o vídeo: {e}", text_color="#FF5555")
+            self.btn_download.configure(state="normal", text="🚀 Iniciar Downloads")
+
+    def baixar_trecho(self, url, inicio, fim, index, pasta, linha_ui):
+        linha_ui["status"].configure(text="Baixando...", text_color="#F1FA8C")
+        linha_ui["progresso"].start()
+
+        titulo_corte = linha_ui["titulo"].get()
+        descricao_corte = linha_ui["descricao"].get()
+
+        if titulo_corte.strip():
+            nome_base = self.limpar_nome_arquivo(titulo_corte)
         else:
-            with st.spinner("Buscando informações do vídeo..."):
-                try:
-                    ydl_opts_info = {'quiet': True}
-                    with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
-                        info = ydl.extract_info(url, download=False)
-                        titulo_video = info.get('title', 'Video_Sem_Titulo')
-                    
-                    st.success(f"Vídeo encontrado: **{titulo_video}**")
-                    
-                    with tempfile.TemporaryDirectory() as tmpdirname:
-                        for corte in cortes_validos:
-                            st.write(f"⏳ Processando **Corte {corte['index']}** ({corte['inicio']} até {corte['fim']})...")
-                            
-                            inicio_sec = tempo_para_segundos(corte['inicio'])
-                            fim_sec = tempo_para_segundos(corte['fim'])
-                            
-                            nome_base = limpar_nome_arquivo(corte['titulo']) if corte['titulo'].strip() else f"Trecho_{corte['index']}"
-                            caminho_video = os.path.join(tmpdirname, f"{nome_base}.mp4")
-                            
-                            ydl_opts = {
-                                'format': 'best',
-                                'outtmpl': caminho_video,
-                                'download_ranges': download_range_func(None, [(inicio_sec, fim_sec)]),
-                                'force_keyframes_at_cuts': True,
-                                'quiet': True,
-                                'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
-                                'external_downloader_args': {'ffmpeg': ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5']}
-                            }
-                            
-                            try:
-                                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                                    ydl.download([url])
-                                
-                                st.success(f"✅ Corte {corte['index']} concluído!")
-                                
-                                with open(caminho_video, "rb") as file:
-                                    st.download_button(
-                                        label=f"📥 Baixar Vídeo ({nome_base}.mp4)",
-                                        data=file,
-                                        file_name=f"{nome_base}.mp4",
-                                        mime="video/mp4",
-                                        key=f"dl_vid_{corte['index']}"
-                                    )
-                                
-                                if corte['descricao'].strip():
-                                    st.download_button(
-                                        label=f"📝 Baixar Legenda (.txt)",
-                                        data=corte['descricao'],
-                                        file_name=f"{nome_base}.txt",
-                                        mime="text/plain",
-                                        key=f"dl_txt_{corte['index']}"
-                                    )
-                                    
-                                st.divider()
-                                
-                            except Exception as e:
-                                st.error(f"❌ Erro no Corte {corte['index']}: {e}")
-                                
-                except Exception as e:
+            nome_base = f'Trecho_{index}_{inicio.replace(":","")}_a_{fim.replace(":","")}'
 
-                    st.error(f"❌ Erro ao acessar o link: {e}")
+        caminho_video = os.path.join(pasta, f'{nome_base}.mp4')
+        caminho_texto = os.path.join(pasta, f'{nome_base}.txt')
+
+        # Convertendo o tempo para a nova regra do yt-dlp
+        inicio_sec = self.tempo_para_segundos(inicio)
+        fim_sec = self.tempo_para_segundos(fim)
+
+        # === CONFIGURAÇÃO CORRIGIDA PARA 1080P COM ÁUDIO ===
+        ydl_opts = {
+            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best', 
+            'merge_output_format': 'mp4',         
+            'outtmpl': caminho_video,
+            # Usa a função nativa de ranges em vez de forçar o FFmpeg cru
+            'download_ranges': download_range_func(None, [(inicio_sec, fim_sec)]),
+            'force_keyframes_at_cuts': True, # Garante um corte perfeito
+            'quiet': True
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+            
+            if descricao_corte.strip():
+                with open(caminho_texto, "w", encoding="utf-8") as f:
+                    f.write(descricao_corte)
+            
+            linha_ui["progresso"].stop()
+            linha_ui["progresso"].set(1)
+            linha_ui["progresso"].configure(progress_color="#50FA7B")
+            linha_ui["status"].configure(text="Concluído!", text_color="#50FA7B")
+            
+        except Exception as e:
+            linha_ui["progresso"].stop()
+            linha_ui["progresso"].configure(progress_color="#FF5555")
+            linha_ui["status"].configure(text="Erro!", text_color="#FF5555")
+            print(f"Erro na linha {index}: {e}")
+
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
