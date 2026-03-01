@@ -52,31 +52,28 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
         if not cortes_validos:
             st.warning("⚠️ Preencha pelo menos o Início e o Fim de um corte!")
         else:
-            with st.spinner("Preparando o vídeo base (Disfarce de Celular Ativado)..."):
+            with st.spinner("Conectando aos servidores do YouTube..."):
                 try:
                     with tempfile.TemporaryDirectory() as tmpdirname:
                         
-                        # === DISFARCE SUPREMO PARA BURLAR O ERRO 403 ===
+                        # Configuração limpa forçando formato genérico
                         ydl_opts_base = {
-                            'format': 'best',
+                            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                             'outtmpl': os.path.join(tmpdirname, 'video_completo.%(ext)s'),
                             'quiet': True,
                             'noplaylist': True,
-                            'extractor_args': {'youtube': ['player_client=android']}, # Finge ser o App do Android!
-                            'http_headers': {'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36'}
+                            'no_check_certificate': True,
+                            'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
                         }
                         
                         with yt_dlp.YoutubeDL(ydl_opts_base) as ydl:
                             info = ydl.extract_info(url, download=True)
                             ext = info.get('ext', 'mp4')
-                            titulo_video = info.get('title', 'Video_Sem_Titulo')
                             video_completo_path = os.path.join(tmpdirname, f'video_completo.{ext}')
                         
-                        st.success(f"✅ Vídeo base baixado! Cortando os trechos...")
+                        st.success(f"✅ Download base autorizado! Cortando...")
                         
                         for corte in cortes_validos:
-                            st.write(f"⏳ Finalizando **Corte {corte['index']}**...")
-                            
                             inicio_sec = tempo_para_segundos(corte['inicio'])
                             fim_sec = tempo_para_segundos(corte['fim'])
                             
@@ -89,28 +86,12 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
                                 '-c:v', 'copy', '-c:a', 'copy', caminho_video
                             ]
                             
-                            resultado = subprocess.run(comando, capture_output=True, text=True)
+                            subprocess.run(comando, capture_output=True, text=True)
                             
-                            if resultado.returncode == 0 and os.path.exists(caminho_video):
+                            if os.path.exists(caminho_video):
                                 st.success(f"✅ Corte {corte['index']} concluído!")
-                                
                                 with open(caminho_video, "rb") as file:
-                                    st.download_button(
-                                        label=f"📥 Baixar Vídeo ({nome_base}.mp4)",
-                                        data=file,
-                                        file_name=f"{nome_base}.mp4",
-                                        mime="video/mp4",
-                                        key=f"dl_vid_{corte['index']}"
-                                    )
-                                
-                                if corte['descricao'].strip():
-                                    st.download_button(
-                                        label=f"📝 Baixar Legenda (.txt)",
-                                        data=corte['descricao'],
-                                        file_name=f"{nome_base}.txt",
-                                        mime="text/plain",
-                                        key=f"dl_txt_{corte['index']}"
-                                    )
+                                    st.download_button(label=f"📥 Baixar Vídeo", data=file, file_name=f"{nome_base}.mp4", mime="video/mp4", key=f"dl_vid_{corte['index']}")
                                 st.divider()
                             else:
                                 st.error(f"❌ Falha ao cortar o trecho {corte['index']}.")
