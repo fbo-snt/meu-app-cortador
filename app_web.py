@@ -76,7 +76,9 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
                                 'outtmpl': caminho_video,
                                 'download_ranges': download_range_func(None, [(inicio_sec, fim_sec)]),
                                 'force_keyframes_at_cuts': True,
-                                'quiet': True
+                                'quiet': True,
+                                'http_headers': {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'},
+                                'external_downloader_args': {'ffmpeg': ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5']}
                             }
                             
                             try:
@@ -109,4 +111,5 @@ if st.button("🚀 Processar Downloads", type="primary", use_container_width=Tru
                                 st.error(f"❌ Erro no Corte {corte['index']}: {e}")
                                 
                 except Exception as e:
+
                     st.error(f"❌ Erro ao acessar o link: {e}")
